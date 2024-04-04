@@ -219,6 +219,34 @@ public class HttpClient
             }
         }
     }
+    public (Dictionary<string, string>? headers, string? body) Get(string path,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("GET", path, headers);
+    }
 
+    public (Dictionary<string, string>? headers, string? body) Post(string path, string body,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("POST", path, headers, body);
+    }
+
+    public (Dictionary<string, string>? headers, string? body) Put(string path, string body,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("PUT", path, headers, body);
+    }
+
+    public (Dictionary<string, string>? headers, string? body) Delete(string path,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("DELETE", path, headers);
+    }
+
+    public (Dictionary<string, string>? headers, string? body) Patch(string path, string body,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("PATCH", path, headers, body);
+    }
   
 }
