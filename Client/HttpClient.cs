@@ -10,7 +10,6 @@ public class HttpClient
     private int port;
     private bool useHttps;
     private Dictionary<string, string> cookies;
-    private Dictionary<string, string> lastResponseHeaders;
 
     public HttpClient(string host, int port = 8000, bool useHttps = false)
     {
@@ -18,7 +17,6 @@ public class HttpClient
         this.port = port;
         this.useHttps = useHttps;
         cookies = new Dictionary<string, string>();
-        lastResponseHeaders = new Dictionary<string, string>();
     }
 
     public (Dictionary<string, string>? headers, string? body) SendRequest(string method, string path,
@@ -28,9 +26,8 @@ public class HttpClient
         try
         {
             using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            // socket.SendTimeout = 1;
+            
             socket.Connect(host, port);
-
             Stream stream = new NetworkStream(socket);
             if (useHttps)
             {
@@ -55,8 +52,8 @@ public class HttpClient
 
             headers.TryAdd("Host", this.host);
 
-            headers.TryAdd("User-Agent", "MyHttpClient/1.0");
-
+            headers.TryAdd("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36");
+            
             headers.TryAdd("Accept", "*/*");
 
             var request = $"{method} {path} HTTP/1.1\r\n" +
@@ -70,32 +67,32 @@ public class HttpClient
             var requestBytes = Encoding.ASCII.GetBytes(request);
             stream.Write(requestBytes, 0, requestBytes.Length);
 
-            ReceiveResponse(stream);
+            var response = ReceiveResponse(stream);
+            var responseHeaders = response.headers;
 
-            // if (headers["Status"].StartsWith("30"))
-            // {
-            //     var newUrl = headers["Location"];
-            //     stream.Close();
-            //     socket.Close();
-            //     stream.Dispose();
-            //     socket.Dispose();
-            //     return SendRequest(method, newUrl, headers, body);
-            // }
+            if (responseHeaders != null && responseHeaders["Status"].StartsWith("30"))
+            {
+                var newUrl = responseHeaders["Location"];
+                stream.Close();
+                socket.Close();
+                stream.Dispose();
+                return SendRequest(method, newUrl, headers, body);
+            }
 
             stream.Close();
             socket.Close();
             stream.Dispose();
-            socket.Dispose();
+            return response;
         }
         catch (SocketException e)
         {
             Console.WriteLine("SocketException: {0}", e);
         }
 
-        return (headers, body);
+        return (null,null);
     }
 
-    private void ReceiveResponse(Stream stream)
+    private (Dictionary<string, string>? headers, string? body ) ReceiveResponse(Stream stream)
     {
         // Read the response headers
         var headers = "";
@@ -125,76 +122,115 @@ public class HttpClient
             }
             else
             {
-                headerDict["Status"] = line;
+                var statusCode = GetStatus(line);
+                headerDict["Status"] = statusCode;
             }
         }
 
+
         ProcessResponseHeaders(headerDict);
-        body = ProcessResponseBody(stream, headerDict, body);
+        body = ProcessResponseBody(stream, headerDict);
         // Print the response headers and body
         Console.WriteLine("Received response headers: " +
                           string.Join(", ", headerDict.Select(x => $"{x.Key}: {x.Value}")));
         Console.WriteLine("Received response body: " + body);
+
+        return (headerDict, body);
     }
 
-    private string ProcessResponseBody(Stream stream, Dictionary<string, string> headerDict, string body)
+    private string GetStatus(string line)
     {
-        if (headerDict.ContainsKey("Transfer-Encoding") && headerDict["Transfer-Encoding"] == "chunked")
+        return line.Substring(9, 3);
+
+    }
+
+    private string ProcessResponseBody(Stream stream, Dictionary<string, string> headerDict)
+    {
+        StringBuilder body = new StringBuilder();
+        if (headerDict.ContainsKey("Transfer-Encoding") && headerDict["Transfer-Encoding"].Equals("chunked", StringComparison.OrdinalIgnoreCase))
         {
-            // If the response is chunked, read the chunks and join them to form the full response body
-            var chunks = new List<string>();
-            while (true)
+            bool readingChunks = true;
+            while (readingChunks)
             {
-                var line = "";
-                while (!line.EndsWith("\r\n"))
-                {
-                    var buffer = new byte[1];
-                    stream.Read(buffer, 0, 1);
-                    line += Encoding.ASCII.GetString(buffer);
-                }
-
-                var chunkLength = int.Parse(line.TrimEnd('\r', '\n'), System.Globalization.NumberStyles.HexNumber);
-
-                if (chunkLength == 0)
+                string line = ReadLineFromStream(stream);
+                if (string.IsNullOrEmpty(line))
                 {
                     break;
                 }
 
-                var chunk = "";
-                while (chunk.Length < chunkLength)
+                if (!int.TryParse(line, System.Globalization.NumberStyles.HexNumber, null, out int chunkSize))
                 {
-                    var buffer = new byte[Math.Min(chunkLength - chunk.Length, 1024)];
-                    stream.Read(buffer, 0, buffer.Length);
-                    chunk += Encoding.ASCII.GetString(buffer);
+                    throw new FormatException($"Invalid chunk size: {line}");
                 }
 
-                chunks.Add(chunk);
+                if (chunkSize == 0)
+                {
+                    while (!string.IsNullOrEmpty(ReadLineFromStream(stream))) {}
+                    break;
+                }
 
-                stream.Read(new byte[2], 0, 2); // Read the trailing \r\n after each chunk
+                byte[] chunkBytes = new byte[chunkSize];
+                int bytesRead = 0;
+                while (bytesRead < chunkSize)
+                {
+                    int read = stream.Read(chunkBytes, bytesRead, chunkSize - bytesRead);
+                    if (read == 0)
+                    {
+                        throw new InvalidOperationException("Unexpected end of stream");
+                    }
+                    bytesRead += read;
+                }
+
+                body.Append(Encoding.UTF8.GetString(chunkBytes, 0, bytesRead));
+            
+                ReadLineFromStream(stream);
             }
-
-            body = string.Join("", chunks);
         }
         else if (headerDict.ContainsKey("Content-Length"))
         {
-            // If the response includes a 'Content-Length' header, read the response body until the specified amount of data has been read
-            var remaining = int.Parse(headerDict["Content-Length"]) - body.Length;
-            while (remaining > 0)
+            if (int.TryParse(headerDict["Content-Length"], out int contentLength))
             {
-                var buffer = new byte[Math.Min(remaining, 1024)];
-                var bytesRead = stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead == 0)
+                byte[] buffer = new byte[contentLength];
+                int totalBytesRead = 0;
+                while (totalBytesRead < contentLength)
                 {
-                    break;
+                    int bytesRead = stream.Read(buffer, totalBytesRead, contentLength - totalBytesRead);
+                    if (bytesRead == 0)
+                    {
+                        throw new InvalidOperationException("Unexpected end of stream");
+                    }
+                    totalBytesRead += bytesRead;
                 }
-
-                body += Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                remaining -= bytesRead;
+                body.Append(Encoding.UTF8.GetString(buffer, 0, totalBytesRead));
+            }
+            else
+            {
+                throw new FormatException($"Invalid Content-Length: {headerDict["Content-Length"]}");
             }
         }
 
-        return body;
+        return body.ToString();
     }
+
+    private string ReadLineFromStream(Stream stream)
+    {
+        StringBuilder stringBuilder = new StringBuilder();
+        byte[] buffer = new byte[1];
+        while (stream.Read(buffer, 0, 1) > 0)
+        {
+            char c = (char)buffer[0];
+            if (c == '\n')
+            {
+                break;
+            }
+            if (c != '\r')
+            {
+                stringBuilder.Append(c);
+            }
+        }
+        return stringBuilder.ToString();
+    }
+
 
     private void ProcessResponseHeaders(Dictionary<string, string> headerDict)
     {
