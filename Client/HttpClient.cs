@@ -130,10 +130,6 @@ public class HttpClient
 
         ProcessResponseHeaders(headerDict);
         body = ProcessResponseBody(stream, headerDict);
-        // Print the response headers and body
-        Console.WriteLine("Received response headers: " +
-                          string.Join(", ", headerDict.Select(x => $"{x.Key}: {x.Value}")));
-        Console.WriteLine("Received response body: " + body);
 
         return (headerDict, body);
     }
