@@ -61,7 +61,7 @@ public class HttpClient
 
             if (body != null)
             {
-                request += "\r\n" + body;
+                request += body;
             }
 
             var requestBytes = Encoding.ASCII.GetBytes(request);
