@@ -50,7 +50,7 @@ public class HttpClient
                 headers["Cookie"] = cookieHeader;
             }
 
-            headers.TryAdd("Host", this.host);
+            headers.TryAdd("Host", this.host+":"+port);
 
             headers.TryAdd("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36");
             
@@ -257,13 +257,13 @@ public class HttpClient
         return SendRequest("GET", path, headers);
     }
 
-    public (Dictionary<string, string>? headers, string? body) Post(string path, string body,
+    public (Dictionary<string, string>? headers, string? body) Post(string path, string? body,
         Dictionary<string, string>? headers = null)
     {
         return SendRequest("POST", path, headers, body);
     }
 
-    public (Dictionary<string, string>? headers, string? body) Put(string path, string body,
+    public (Dictionary<string, string>? headers, string? body) Put(string path, string? body,
         Dictionary<string, string>? headers = null)
     {
         return SendRequest("PUT", path, headers, body);
@@ -275,10 +275,19 @@ public class HttpClient
         return SendRequest("DELETE", path, headers);
     }
 
-    public (Dictionary<string, string>? headers, string? body) Patch(string path, string body,
+    public (Dictionary<string, string>? headers, string? body) Trace(string path,
         Dictionary<string, string>? headers = null)
     {
-        return SendRequest("PATCH", path, headers, body);
+        return SendRequest("TRACE", path, headers);
+    } 
+    public (Dictionary<string, string>? headers, string? body) Head(string path,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("HEAD", path, headers);
+    }  
+    public (Dictionary<string, string>? headers, string? body) Options(string path,
+        Dictionary<string, string>? headers = null)
+    {
+        return SendRequest("OPTIONS", path, headers);
     }
-  
 }
