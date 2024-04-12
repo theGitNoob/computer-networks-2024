@@ -4,22 +4,11 @@ using System.Text;
 
 namespace Client;
 
-public class HttpClient
+public class HttpClient(string host, int port = 8000, bool useHttps = false)
 {
-    private string host;
-    private int port;
-    private bool useHttps;
-    private Dictionary<string, string> cookies;
+    private readonly Dictionary<string, string> _cookies = new();
 
-    public HttpClient(string host, int port = 8000, bool useHttps = false)
-    {
-        this.host = host;
-        this.port = port;
-        this.useHttps = useHttps;
-        cookies = new Dictionary<string, string>();
-    }
-
-    public (Dictionary<string, string>? headers, string? body) SendRequest(string method, string path,
+    private (Dictionary<string, string>? headers, string? body) SendRequest(string method, string path,
         Dictionary<string, string>? headers = null, string? body = null, string? username = null,
         string? password = null)
     {
@@ -44,13 +33,13 @@ public class HttpClient
                 headers["Authorization"] = "Basic " + credentials;
             }
 
-            if (cookies.Count > 0)
+            if (_cookies.Count > 0)
             {
-                var cookieHeader = string.Join("; ", cookies.Select(x => $"{x.Key}={x.Value}"));
+                var cookieHeader = string.Join("; ", _cookies.Select(x => $"{x.Key}={x.Value}"));
                 headers["Cookie"] = cookieHeader;
             }
 
-            headers.TryAdd("Host", this.host+":"+port);
+            headers.TryAdd("Host", host+":"+port);
 
             headers.TryAdd("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36");
             
@@ -108,7 +97,6 @@ public class HttpClient
         // Split the headers from the body
         var parts = headers.Split(["\r\n\r\n"], StringSplitOptions.None);
         headers = parts[0];
-        var body = parts.Length > 1 ? parts[1] : "";
 
         // Convert the headers into a dictionary
         var headerDict = new Dictionary<string, string>();
@@ -129,7 +117,7 @@ public class HttpClient
 
 
         ProcessResponseHeaders(headerDict);
-        body = ProcessResponseBody(stream, headerDict);
+        var body = ProcessResponseBody(stream, headerDict);
 
         return (headerDict, body);
     }
@@ -145,8 +133,7 @@ public class HttpClient
         StringBuilder body = new StringBuilder();
         if (headerDict.ContainsKey("Transfer-Encoding") && headerDict["Transfer-Encoding"].Equals("chunked", StringComparison.OrdinalIgnoreCase))
         {
-            bool readingChunks = true;
-            while (readingChunks)
+            while (true)
             {
                 string line = ReadLineFromStream(stream);
                 if (string.IsNullOrEmpty(line))
@@ -237,7 +224,7 @@ public class HttpClient
                 // If the response includes a cookie, store it
                 var cookieParts = header.Value.Split(new string[] { "; " }, StringSplitOptions.None);
                 var cookieNameValue = cookieParts[0].Split(new string[] { "=" }, StringSplitOptions.None);
-                cookies[cookieNameValue[0]] = cookieNameValue[1];
+                _cookies[cookieNameValue[0]] = cookieNameValue[1];
             }
             else if (header.Key.ToLower() == "content-encoding")
             {
